@@ -44,7 +44,7 @@ jobs:
         with:
           repository: ${{ steps.integration-source.outputs.repository }}
           ref: ${{ steps.integration-source.outputs.ref }}
-          path: docx-integration-source
+          path: docx-integration
           token: ""
           persist-credentials: false
 
@@ -54,7 +54,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs plan-maintenance
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs plan-maintenance
 
   refresh:
     name: Refresh Pull Request Audit Artifact
@@ -96,7 +96,7 @@ jobs:
         with:
           repository: ${{ steps.integration-source.outputs.repository }}
           ref: ${{ steps.integration-source.outputs.ref }}
-          path: docx-integration-source
+          path: docx-integration
           token: ""
           persist-credentials: false
 
@@ -110,7 +110,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           OLD_ARTIFACT_ID: ${{ matrix.item.old_artifact_id }}
           ARTIFACT_DOWNLOAD_DIR: ${{ runner.temp }}/docx-maintenance-artifact
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs download-maintenance-artifact
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs download-maintenance-artifact
 
       - name: Upload replacement Pull Request Audit Artifact
         id: upload-replacement
@@ -136,7 +136,7 @@ jobs:
           NEW_ARTIFACT_ID: ${{ steps.upload-replacement.outputs.artifact-id }}
           NEW_ARTIFACT_URL: ${{ steps.upload-replacement.outputs.artifact-url }}
           ARTIFACT_NAME: ${{ matrix.item.artifact_name }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-maintenance-upload
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs validate-maintenance-upload
 
       - name: Refresh current report comment
         id: refresh-comment
@@ -150,7 +150,7 @@ jobs:
           AUDITED_SHA: ${{ matrix.item.audited_sha }}
           REPORT_FORMAT: ${{ matrix.item.report_format }}
           REPORT_URL: ${{ steps.validate-replacement.outputs.report_url }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs refresh-maintenance-comment
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs refresh-maintenance-comment
 
       - name: Delete old Pull Request Audit Artifact
         id: delete-old-artifact
@@ -164,4 +164,4 @@ jobs:
           UPLOAD_ACCEPTED: ${{ steps.validate-replacement.outputs.accepted }}
           IS_CURRENT_REPORT: ${{ matrix.item.is_current_report }}
           COMMENT_UPDATED: ${{ steps.refresh-comment.outputs.updated }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs delete-maintenance-artifact
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs delete-maintenance-artifact
