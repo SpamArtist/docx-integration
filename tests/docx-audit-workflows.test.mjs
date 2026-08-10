@@ -423,7 +423,7 @@ test("Reusable workflow writes operational records and keeps them for 30 days", 
   assert.match(binaryStep, /WORKFLOW_RUN_ATTEMPT: \$\{\{ github\.run_attempt \}\}/);
   assert.match(binaryStep, /COMMIT_SHA: \$\{\{ steps\.request\.outputs\.head_sha \}\}/);
   assert.match(auditStep, /DOCX_EXECUTION_RECEIPT_PATH: \$\{\{ runner\.temp \}\}\/docx-audit-operational-records\/docx-execution-receipt\.json/);
-  assert.match(auditStep, /DOCX_EXIT_CODE="\$status" node docx-integration-source\/scripts\/docx-audit-workflow-guards\.mjs write-execution-receipt/);
+  assert.match(auditStep, /DOCX_EXIT_CODE="\$status" node docx-integration\/scripts\/docx-audit-workflow-guards\.mjs write-execution-receipt/);
   assert(auditStep.indexOf('DOCX_EXIT_CODE="$status"') < auditStep.indexOf('if [ "$status" -ne 0 ]'));
   assert.match(recordsStep, /if: always\(\) && steps\.current-head\.outputs\.should_use_secret == 'true'/);
   assert.match(recordsStep, /name: docx-operational-records-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);

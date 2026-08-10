@@ -74,7 +74,7 @@ jobs:
         with:
           repository: ${{ steps.integration-source.outputs.repository }}
           ref: ${{ steps.integration-source.outputs.ref }}
-          path: docx-integration-source
+          path: docx-integration
 
       - name: Validate pull request before secret use
         id: request
@@ -86,7 +86,7 @@ jobs:
           DOCX_EVENT_JSON: ${{ toJSON(github.event) }}
           DOCX_VERSION: ${{ inputs.docx_version }}
           REPORT_FORMAT: ${{ inputs.report_format }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-request
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs validate-request
 
       - name: Download Extension Bundle Artifact
         id: extension-bundle
@@ -116,7 +116,7 @@ jobs:
             ARTIFACT_HEAD_SHA="$(cat "$marker")"
           fi
           export ARTIFACT_HEAD_SHA
-          node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-artifact-head
+          node docx-integration/scripts/docx-audit-workflow-guards.mjs validate-artifact-head
 
       - name: Validate bundle path
         id: bundle
@@ -126,7 +126,7 @@ jobs:
         env:
           ARTIFACT_ROOT: ${{ runner.temp }}/docx-extension-bundle
           BUNDLE_PATH: ${{ inputs.bundle_path }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-bundle
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs validate-bundle
 
       - name: Checkout root configuration
         id: root-config
@@ -162,7 +162,7 @@ jobs:
         run: |
           CHECKED_OUT_SHA="$(git -C consumer-root-config rev-parse HEAD)"
           export CHECKED_OUT_SHA
-          node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-request
+          node docx-integration/scripts/docx-audit-workflow-guards.mjs validate-request
 
       - name: Download and verify Prebuilt DocX Binary
         id: binary
@@ -179,7 +179,7 @@ jobs:
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
           COMMIT_SHA: ${{ steps.request.outputs.head_sha }}
         run: |
-          node docx-integration-source/scripts/docx-audit-workflow-guards.mjs download-binary
+          node docx-integration/scripts/docx-audit-workflow-guards.mjs download-binary
 
       - name: Run DocX audit
         id: audit
@@ -197,7 +197,7 @@ jobs:
           DOCX_VERSION: ${{ inputs.docx_version }}
         run: |
           set -euo pipefail
-          DOCX_BIN="$(node docx-integration-source/scripts/docx-audit-workflow-guards.mjs resolve-executable)"
+          DOCX_BIN="$(node docx-integration/scripts/docx-audit-workflow-guards.mjs resolve-executable)"
           REPORT_PATH="${REPORT_DIR}/report.${REPORT_FORMAT}"
           rm -rf "$REPORT_DIR"
           mkdir -p "$REPORT_DIR"
@@ -211,9 +211,9 @@ jobs:
           "$DOCX_BIN" audit "$BUNDLE_PATH" --format "$REPORT_FORMAT" --output "$REPORT_PATH" "${config_args[@]}"
           status=$?
           set -e
-          DOCX_EXIT_CODE="$status" node docx-integration-source/scripts/docx-audit-workflow-guards.mjs write-execution-receipt
+          DOCX_EXIT_CODE="$status" node docx-integration/scripts/docx-audit-workflow-guards.mjs write-execution-receipt
           if [ "$status" -ne 0 ]; then
-            node docx-integration-source/scripts/docx-audit-workflow-guards.mjs cleanup-report
+            node docx-integration/scripts/docx-audit-workflow-guards.mjs cleanup-report
             echo "::warning::DocX Pull Request Audit stopped: docx-exit-code-${status}. DocX audit did not create a successful report."
             exit "$status"
           fi
@@ -227,7 +227,7 @@ jobs:
           REPORT_FORMAT: ${{ steps.request.outputs.report_format }}
           REPORT_DIR: ${{ runner.temp }}/docx-pull-request-audit-report
           REPORT_PATH: ${{ runner.temp }}/docx-pull-request-audit-report/report.${{ steps.request.outputs.report_format }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-report
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs validate-report
 
       - name: Prepare Pull Request Audit Artifact name
         id: artifact-name
@@ -238,7 +238,7 @@ jobs:
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ steps.request.outputs.head_sha }}
           REPORT_FORMAT: ${{ steps.request.outputs.report_format }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs artifact-name
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs artifact-name
 
       - name: Upload Pull Request Audit Artifact
         id: upload-report
@@ -265,7 +265,7 @@ jobs:
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ steps.request.outputs.head_sha }}
           REPORT_FORMAT: ${{ steps.request.outputs.report_format }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs publish-report-output
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs publish-report-output
 
       - name: Upload audit operational records
         if: always() && steps.current-head.outputs.should_use_secret == 'true'
@@ -319,7 +319,7 @@ jobs:
         with:
           repository: ${{ steps.integration-source.outputs.repository }}
           ref: ${{ steps.integration-source.outputs.ref }}
-          path: docx-integration-source
+          path: docx-integration
 
       - name: Update marked comment
         id: update-comment
@@ -333,7 +333,7 @@ jobs:
           AUDITED_SHA: ${{ needs.audit.outputs.audited_sha }}
           REPORT_FORMAT: ${{ needs.audit.outputs.report_format }}
           REPORT_URL: ${{ needs.audit.outputs.report_url }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs update-comment
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs update-comment
 
   artifact-cleanup:
     name: Delete older Pull Request Audit Artifact
@@ -372,7 +372,7 @@ jobs:
         with:
           repository: ${{ steps.integration-source.outputs.repository }}
           ref: ${{ steps.integration-source.outputs.ref }}
-          path: docx-integration-source
+          path: docx-integration
 
       - name: Delete older artifact for same report identity
         id: delete-older-artifacts
@@ -383,4 +383,4 @@ jobs:
           REPOSITORY: ${{ github.event.repository.full_name }}
           ARTIFACT_NAME: ${{ needs.audit.outputs.artifact_name }}
           CURRENT_ARTIFACT_ID: ${{ needs.audit.outputs.artifact_id }}
-        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs delete-older-artifacts
+        run: node docx-integration/scripts/docx-audit-workflow-guards.mjs delete-older-artifacts
