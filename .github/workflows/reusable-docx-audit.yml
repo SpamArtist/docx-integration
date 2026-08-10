@@ -1,0 +1,386 @@
+name: Reusable DocX Pull Request Audit
+
+on:
+  workflow_call:
+    inputs:
+      docx_version:
+        required: true
+        type: string
+      bundle_path:
+        required: true
+        type: string
+      report_format:
+        required: false
+        type: string
+        default: html
+    secrets:
+      binary_download_token:
+        required: true
+    outputs:
+      report_url:
+        value: ${{ jobs.audit.outputs.report_url }}
+      artifact_id:
+        value: ${{ jobs.audit.outputs.artifact_id }}
+      artifact_name:
+        value: ${{ jobs.audit.outputs.artifact_name }}
+      audited_sha:
+        value: ${{ jobs.audit.outputs.audited_sha }}
+      report_format:
+        value: ${{ jobs.audit.outputs.report_format }}
+      artifact_metadata:
+        value: ${{ jobs.audit.outputs.artifact_metadata }}
+
+permissions: {}
+
+jobs:
+  audit:
+    name: Audit Extension Bundle Artifact
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      report_url: ${{ steps.report-url.outputs.report_url }}
+      artifact_id: ${{ steps.report-url.outputs.artifact_id }}
+      artifact_name: ${{ steps.report-url.outputs.artifact_name }}
+      audited_sha: ${{ steps.report-url.outputs.audited_sha }}
+      report_format: ${{ steps.report-url.outputs.report_format }}
+      artifact_metadata: ${{ steps.report-url.outputs.metadata_json }}
+
+    steps:
+      - name: Derive integration helper source
+        id: integration-source
+        shell: bash
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          repository="${WORKFLOW_REF%%/.github/workflows/*}"
+          if [ -z "$repository" ] || [ "$repository" = "$WORKFLOW_REF" ]; then
+            echo "::error::Reusable workflow repository could not be derived."
+            exit 1
+          fi
+          if ! printf '%s' "$WORKFLOW_SHA" | grep -Eq '^[0-9a-fA-F]{40}$'; then
+            echo "::error::Reusable workflow SHA is invalid."
+            exit 1
+          fi
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "ref=$WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout integration helpers
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ steps.integration-source.outputs.repository }}
+          ref: ${{ steps.integration-source.outputs.ref }}
+          path: docx-integration-source
+
+      - name: Validate pull request before secret use
+        id: request
+        shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_ACTION: ${{ github.event.action }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          DOCX_EVENT_JSON: ${{ toJSON(github.event) }}
+          DOCX_VERSION: ${{ inputs.docx_version }}
+          REPORT_FORMAT: ${{ inputs.report_format }}
+        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-request
+
+      - name: Download Extension Bundle Artifact
+        id: extension-bundle
+        if: steps.request.outputs.should_run == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        continue-on-error: true
+        with:
+          name: docx-extension-bundle
+          path: ${{ runner.temp }}/docx-extension-bundle
+
+      - name: Warn about Extension Bundle Artifact download failure
+        if: steps.request.outputs.should_run == 'true' && steps.extension-bundle.outcome != 'success'
+        shell: bash
+        run: |
+          echo "::warning::DocX Pull Request Audit stopped: extension-bundle-download-failed. Extension Bundle Artifact download failed."
+
+      - name: Validate Extension Bundle Artifact head
+        id: artifact-head
+        if: steps.request.outputs.should_run == 'true' && steps.extension-bundle.outcome == 'success'
+        shell: bash
+        continue-on-error: true
+        env:
+          EXPECTED_HEAD_SHA: ${{ steps.request.outputs.head_sha }}
+        run: |
+          marker="${RUNNER_TEMP}/docx-extension-bundle/.docx/head-sha"
+          if [ -f "$marker" ]; then
+            ARTIFACT_HEAD_SHA="$(cat "$marker")"
+          fi
+          export ARTIFACT_HEAD_SHA
+          node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-artifact-head
+
+      - name: Validate bundle path
+        id: bundle
+        if: steps.artifact-head.outputs.accepted == 'true'
+        shell: bash
+        continue-on-error: true
+        env:
+          ARTIFACT_ROOT: ${{ runner.temp }}/docx-extension-bundle
+          BUNDLE_PATH: ${{ inputs.bundle_path }}
+        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-bundle
+
+      - name: Checkout root configuration
+        id: root-config
+        if: steps.bundle.outputs.accepted == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        continue-on-error: true
+        with:
+          ref: ${{ steps.request.outputs.head_sha }}
+          path: consumer-root-config
+          sparse-checkout: |
+            docx.yml
+            docx.toml
+          sparse-checkout-cone-mode: false
+
+      - name: Warn about root configuration checkout failure
+        if: steps.bundle.outputs.accepted == 'true' && steps.root-config.outcome != 'success'
+        shell: bash
+        run: |
+          echo "::warning::DocX Pull Request Audit stopped: root-config-checkout-failed. Root configuration checkout failed."
+
+      - name: Confirm current pull request head
+        id: current-head
+        if: steps.bundle.outputs.accepted == 'true' && steps.root-config.outcome == 'success'
+        shell: bash
+        continue-on-error: true
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_ACTION: ${{ github.event.action }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          DOCX_EVENT_JSON: ${{ toJSON(github.event) }}
+          DOCX_VERSION: ${{ inputs.docx_version }}
+          REPORT_FORMAT: ${{ inputs.report_format }}
+        run: |
+          CHECKED_OUT_SHA="$(git -C consumer-root-config rev-parse HEAD)"
+          export CHECKED_OUT_SHA
+          node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-request
+
+      - name: Download and verify Prebuilt DocX Binary
+        id: binary
+        if: steps.current-head.outputs.should_use_secret == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.binary_download_token }}
+          DOCX_VERSION: ${{ inputs.docx_version }}
+          BINARY_DOWNLOAD_DIR: ${{ runner.temp }}/docx-prebuilt-binary
+          BINARY_VERIFICATION_STATE: ${{ runner.temp }}/docx-binary-verification/state.json
+          BINARY_DOWNLOAD_RECORD_PATH: ${{ runner.temp }}/docx-audit-operational-records/binary-download-record.json
+          CONSUMER_REPOSITORY: ${{ github.event.repository.full_name }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          COMMIT_SHA: ${{ steps.request.outputs.head_sha }}
+        run: |
+          node docx-integration-source/scripts/docx-audit-workflow-guards.mjs download-binary
+
+      - name: Run DocX audit
+        id: audit
+        if: steps.binary.outputs.verified == 'true'
+        shell: bash
+        continue-on-error: true
+        env:
+          BUNDLE_PATH: ${{ steps.bundle.outputs.bundle_path }}
+          REPORT_FORMAT: ${{ steps.request.outputs.report_format }}
+          REPORT_DIR: ${{ runner.temp }}/docx-pull-request-audit-report
+          BINARY_VERIFICATION_STATE: ${{ runner.temp }}/docx-binary-verification/state.json
+          DOCX_EXECUTION_RECEIPT_PATH: ${{ runner.temp }}/docx-audit-operational-records/docx-execution-receipt.json
+          CONSUMER_REPOSITORY: ${{ github.event.repository.full_name }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          DOCX_VERSION: ${{ inputs.docx_version }}
+        run: |
+          set -euo pipefail
+          DOCX_BIN="$(node docx-integration-source/scripts/docx-audit-workflow-guards.mjs resolve-executable)"
+          REPORT_PATH="${REPORT_DIR}/report.${REPORT_FORMAT}"
+          rm -rf "$REPORT_DIR"
+          mkdir -p "$REPORT_DIR"
+          config_args=()
+          if [ -f "consumer-root-config/docx.yml" ]; then
+            config_args=(--config "consumer-root-config/docx.yml")
+          elif [ -f "consumer-root-config/docx.toml" ]; then
+            config_args=(--config "consumer-root-config/docx.toml")
+          fi
+          set +e
+          "$DOCX_BIN" audit "$BUNDLE_PATH" --format "$REPORT_FORMAT" --output "$REPORT_PATH" "${config_args[@]}"
+          status=$?
+          set -e
+          DOCX_EXIT_CODE="$status" node docx-integration-source/scripts/docx-audit-workflow-guards.mjs write-execution-receipt
+          if [ "$status" -ne 0 ]; then
+            node docx-integration-source/scripts/docx-audit-workflow-guards.mjs cleanup-report
+            echo "::warning::DocX Pull Request Audit stopped: docx-exit-code-${status}. DocX audit did not create a successful report."
+            exit "$status"
+          fi
+
+      - name: Validate selected report file
+        id: report-file
+        if: steps.audit.outcome == 'success'
+        shell: bash
+        continue-on-error: true
+        env:
+          REPORT_FORMAT: ${{ steps.request.outputs.report_format }}
+          REPORT_DIR: ${{ runner.temp }}/docx-pull-request-audit-report
+          REPORT_PATH: ${{ runner.temp }}/docx-pull-request-audit-report/report.${{ steps.request.outputs.report_format }}
+        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs validate-report
+
+      - name: Prepare Pull Request Audit Artifact name
+        id: artifact-name
+        if: steps.report-file.outputs.accepted == 'true'
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.event.repository.full_name }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ steps.request.outputs.head_sha }}
+          REPORT_FORMAT: ${{ steps.request.outputs.report_format }}
+        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs artifact-name
+
+      - name: Upload Pull Request Audit Artifact
+        id: upload-report
+        if: steps.report-file.outputs.accepted == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        continue-on-error: true
+        with:
+          name: ${{ steps.artifact-name.outputs.artifact_name }}
+          path: ${{ steps.report-file.outputs.report_path }}
+          retention-days: 30
+          compression-level: 0
+          overwrite: false
+          if-no-files-found: error
+
+      - name: Publish report URL and artifact metadata
+        id: report-url
+        shell: bash
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload-report.outcome }}
+          UPLOAD_ARTIFACT_URL: ${{ steps.upload-report.outputs.artifact-url }}
+          UPLOAD_ARTIFACT_ID: ${{ steps.upload-report.outputs.artifact-id }}
+          ARTIFACT_NAME: ${{ steps.artifact-name.outputs.artifact_name }}
+          REPOSITORY: ${{ github.event.repository.full_name }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ steps.request.outputs.head_sha }}
+          REPORT_FORMAT: ${{ steps.request.outputs.report_format }}
+        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs publish-report-output
+
+      - name: Upload audit operational records
+        if: always() && steps.current-head.outputs.should_use_secret == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        continue-on-error: true
+        with:
+          name: docx-operational-records-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/docx-audit-operational-records/*.json
+          retention-days: 30
+          compression-level: 0
+          overwrite: false
+          if-no-files-found: error
+
+  comment:
+    name: Update Pull Request Audit comment
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    needs:
+      - audit
+    if: needs.audit.outputs.report_url != ''
+    permissions:
+      pull-requests: write
+    outputs:
+      updated: ${{ steps.update-comment.outputs.updated }}
+      comment_id: ${{ steps.update-comment.outputs.comment_id }}
+      current_head_sha: ${{ steps.update-comment.outputs.current_head_sha }}
+
+    steps:
+      - name: Derive integration helper source
+        id: integration-source
+        shell: bash
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          repository="${WORKFLOW_REF%%/.github/workflows/*}"
+          if [ -z "$repository" ] || [ "$repository" = "$WORKFLOW_REF" ]; then
+            echo "::error::Reusable workflow repository could not be derived."
+            exit 1
+          fi
+          if ! printf '%s' "$WORKFLOW_SHA" | grep -Eq '^[0-9a-fA-F]{40}$'; then
+            echo "::error::Reusable workflow SHA is invalid."
+            exit 1
+          fi
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "ref=$WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout integration helpers
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ steps.integration-source.outputs.repository }}
+          ref: ${{ steps.integration-source.outputs.ref }}
+          path: docx-integration-source
+
+      - name: Update marked comment
+        id: update-comment
+        shell: bash
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.event.repository.full_name }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          DOCX_VERSION: ${{ inputs.docx_version }}
+          AUDITED_SHA: ${{ needs.audit.outputs.audited_sha }}
+          REPORT_FORMAT: ${{ needs.audit.outputs.report_format }}
+          REPORT_URL: ${{ needs.audit.outputs.report_url }}
+        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs update-comment
+
+  artifact-cleanup:
+    name: Delete older Pull Request Audit Artifact
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    needs:
+      - audit
+      - comment
+    if: needs.comment.outputs.updated == 'true'
+    permissions:
+      actions: write
+
+    steps:
+      - name: Derive integration helper source
+        id: integration-source
+        shell: bash
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          repository="${WORKFLOW_REF%%/.github/workflows/*}"
+          if [ -z "$repository" ] || [ "$repository" = "$WORKFLOW_REF" ]; then
+            echo "::error::Reusable workflow repository could not be derived."
+            exit 1
+          fi
+          if ! printf '%s' "$WORKFLOW_SHA" | grep -Eq '^[0-9a-fA-F]{40}$'; then
+            echo "::error::Reusable workflow SHA is invalid."
+            exit 1
+          fi
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "ref=$WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout integration helpers
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ steps.integration-source.outputs.repository }}
+          ref: ${{ steps.integration-source.outputs.ref }}
+          path: docx-integration-source
+
+      - name: Delete older artifact for same report identity
+        id: delete-older-artifacts
+        shell: bash
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.event.repository.full_name }}
+          ARTIFACT_NAME: ${{ needs.audit.outputs.artifact_name }}
+          CURRENT_ARTIFACT_ID: ${{ needs.audit.outputs.artifact_id }}
+        run: node docx-integration-source/scripts/docx-audit-workflow-guards.mjs delete-older-artifacts
