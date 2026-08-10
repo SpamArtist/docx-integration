@@ -558,13 +558,14 @@ test("Reusable workflow does not use cache, fallback, toolchain commands, or sou
   assert.doesNotMatch(REUSABLE_WORKFLOW, /DocX source|checkout.*DocX/i);
 });
 
-test("Reusable workflow helper checkout uses supported github context", () => {
-  assert.doesNotMatch(REUSABLE_WORKFLOW, /job\.workflow_/);
-  assert.match(REUSABLE_WORKFLOW, /WORKFLOW_REF: \$\{\{ github\.workflow_ref \}\}/);
-  assert.match(REUSABLE_WORKFLOW, /WORKFLOW_SHA: \$\{\{ github\.workflow_sha \}\}/);
-  const checkoutStep = stepBlock(REUSABLE_WORKFLOW, "Checkout integration helpers");
-  assert.match(checkoutStep, /repository: \$\{\{ steps\.integration-source\.outputs\.repository \}\}/);
-  assert.match(checkoutStep, /ref: \$\{\{ steps\.integration-source\.outputs\.ref \}\}/);
+test("Reusable workflow helper checkout pins the Integration Repository", () => {
+  for (const workflow of [REUSABLE_WORKFLOW, MAINTENANCE_WORKFLOW]) {
+    assert.doesNotMatch(workflow, /github\.workflow_(ref|sha)|integration-source/);
+    for (const checkoutStep of workflow.matchAll(/- name: Checkout integration helpers[\s\S]*?(?=\n      - name:|\n  \w|$)/g)) {
+      assert.match(checkoutStep[0], /repository: SpamArtist\/docx-integration/);
+      assert.match(checkoutStep[0], /ref: [0-9a-f]{40}/i);
+    }
+  }
 });
 
 test("Workflow action references use full commit SHAs", () => {
