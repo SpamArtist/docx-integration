@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: SpamArtist/docx-integration
-          ref: 568e4a03aa7b8a76d1915b4b67fdbea606ec4f73
+          ref: f43e96f6e83d14013c6d31c334cc7fd2e5c8faa4
           path: docx-integration
 
       - name: Validate pull request before secret use
@@ -278,7 +278,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: SpamArtist/docx-integration
-          ref: 568e4a03aa7b8a76d1915b4b67fdbea606ec4f73
+          ref: f43e96f6e83d14013c6d31c334cc7fd2e5c8faa4
           path: docx-integration
 
       - name: Update marked comment
@@ -311,7 +311,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: SpamArtist/docx-integration
-          ref: 568e4a03aa7b8a76d1915b4b67fdbea606ec4f73
+          ref: f43e96f6e83d14013c6d31c334cc7fd2e5c8faa4
           path: docx-integration
 
       - name: Delete older artifact for same report identity

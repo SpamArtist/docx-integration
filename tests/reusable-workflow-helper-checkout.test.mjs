@@ -5,7 +5,7 @@ import test from "node:test";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const HELPER_REPOSITORY = "SpamArtist/docx-integration";
-const HELPER_REF = "568e4a03aa7b8a76d1915b4b67fdbea606ec4f73";
+const HELPER_REF = "f43e96f6e83d14013c6d31c334cc7fd2e5c8faa4";
 
 for (const workflowPath of [
   ".github/workflows/reusable-docx-audit.yml",
