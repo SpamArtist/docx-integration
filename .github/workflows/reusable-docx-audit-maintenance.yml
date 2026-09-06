@@ -25,7 +25,7 @@ jobs:
           repository: SpamArtist/docx-integration
           ref: 568e4a03aa7b8a76d1915b4b67fdbea606ec4f73
           path: docx-integration
-          token: ""
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Plan maintenance
@@ -57,7 +57,7 @@ jobs:
           repository: SpamArtist/docx-integration
           ref: 568e4a03aa7b8a76d1915b4b67fdbea606ec4f73
           path: docx-integration
-          token: ""
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Download old Pull Request Audit Artifact

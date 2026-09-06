@@ -20,6 +20,7 @@ for (const workflowPath of [
     for (const [checkoutStep] of checkoutSteps) {
       assert.match(checkoutStep, new RegExp(`repository: ${HELPER_REPOSITORY}`));
       assert.match(checkoutStep, new RegExp(`ref: ${HELPER_REF}`));
+      assert.doesNotMatch(checkoutStep, /token:\s*["']{2}/);
     }
   });
 }
