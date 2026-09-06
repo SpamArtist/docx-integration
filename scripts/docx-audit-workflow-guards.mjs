@@ -998,8 +998,9 @@ export class BinaryVerificationError extends Error {
 }
 
 export class GhPullRequestAuditClient {
-  constructor(token) {
+  constructor(token, spawn = spawnSync) {
     this.token = token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? "";
+    this.spawn = spawn;
   }
 
   async getPullRequestHeadSha(repository, pullRequestNumber) {
@@ -1056,10 +1057,7 @@ export class GhPullRequestAuditClient {
 
   async listArtifactsByName(repository, artifactName) {
     const output = this.#ghApi([
-      "repos",
-      repository,
-      "actions",
-      "artifacts",
+      ["repos", repository, "actions", "artifacts"].join("/"),
       "-f",
       `name=${artifactName}`,
       "--paginate",
@@ -1070,10 +1068,7 @@ export class GhPullRequestAuditClient {
 
   async listArtifacts(repository) {
     const output = this.#ghApi([
-      "repos",
-      repository,
-      "actions",
-      "artifacts",
+      ["repos", repository, "actions", "artifacts"].join("/"),
       "--paginate",
       "--slurp",
     ]);
@@ -1085,11 +1080,7 @@ export class GhPullRequestAuditClient {
       throw new Error("Workflow run ID is invalid.");
     }
     const output = this.#ghApi([
-      "repos",
-      repository,
-      "actions",
-      "runs",
-      String(runId),
+      ["repos", repository, "actions", "runs", String(runId)].join("/"),
     ]);
     return JSON.parse(output);
   }
@@ -1097,10 +1088,7 @@ export class GhPullRequestAuditClient {
   async getPullRequest(repository, pullRequestNumber) {
     validatePullRequestNumber(String(pullRequestNumber));
     const output = this.#ghApi([
-      "repos",
-      repository,
-      "pulls",
-      String(pullRequestNumber),
+      ["repos", repository, "pulls", String(pullRequestNumber)].join("/"),
     ]);
     return JSON.parse(output);
   }
@@ -1111,12 +1099,7 @@ export class GhPullRequestAuditClient {
     }
     mkdirSync(dirname(outputPath), { recursive: true });
     this.#ghApi([
-      "repos",
-      repository,
-      "actions",
-      "artifacts",
-      String(artifactId),
-      "zip",
+      ["repos", repository, "actions", "artifacts", String(artifactId), "zip"].join("/"),
       "--output",
       outputPath,
     ]);
@@ -1126,7 +1109,7 @@ export class GhPullRequestAuditClient {
     this.#ghApi([
       "-X",
       "DELETE",
-      ["repos", repository, "actions", "artifacts", artifactId].join("/"),
+      ["repos", repository, "actions", "artifacts", String(artifactId)].join("/"),
     ]);
   }
 
@@ -1134,7 +1117,7 @@ export class GhPullRequestAuditClient {
     if (!this.token) {
       throw new Error("GitHub token is missing.");
     }
-    const result = spawnSync("gh", ["api", ...args], {
+    const result = this.spawn("gh", ["api", ...args], {
       encoding: "utf8",
       env: { ...process.env, GH_TOKEN: this.token },
       maxBuffer: 1024 * 1024,

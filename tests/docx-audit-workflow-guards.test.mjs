@@ -19,6 +19,7 @@ import test from "node:test";
 import {
   BinaryVerificationError,
   DOCX_PULL_REQUEST_AUDIT_COMMENT_MARKER,
+  GhPullRequestAuditClient,
   buildBinaryDownloadRecord,
   buildDocXExecutionReceipt,
   buildSafeWorkflowWarning,
@@ -61,6 +62,35 @@ const MARKED_RESTRICTED_VALUES = [
   "DOCX_TEST_RESTRICTED_REPORT_CONTENT_738",
   "DOCX_TEST_RESTRICTED_CONFIG_CONTENT_738",
 ];
+
+test("GitHub maintenance client sends one REST endpoint argument", async () => {
+  const calls = [];
+  const spawn = (command, args) => {
+    calls.push([command, ...args]);
+    return {
+      status: 0,
+      stdout: args.includes("--slurp") ? '[{"total_count":0,"artifacts":[]}]' : "{}",
+    };
+  };
+  const client = new GhPullRequestAuditClient("token", spawn);
+  const archivePath = join(fixtureRoot(), "artifact.zip");
+
+  await client.listArtifacts("owner/repo");
+  await client.listArtifactsByName("owner/repo", "report");
+  await client.getWorkflowRun("owner/repo", "123");
+  await client.getPullRequest("owner/repo", "4");
+  await client.downloadArtifactZip("owner/repo", "5", archivePath);
+  await client.deleteArtifact("owner/repo", "6");
+
+  assert.deepEqual(calls, [
+    ["gh", "api", "repos/owner/repo/actions/artifacts", "--paginate", "--slurp"],
+    ["gh", "api", "repos/owner/repo/actions/artifacts", "-f", "name=report", "--paginate", "--slurp"],
+    ["gh", "api", "repos/owner/repo/actions/runs/123"],
+    ["gh", "api", "repos/owner/repo/pulls/4"],
+    ["gh", "api", "repos/owner/repo/actions/artifacts/5/zip", "--output", archivePath],
+    ["gh", "api", "-X", "DELETE", "repos/owner/repo/actions/artifacts/6"],
+  ]);
+});
 
 test("accepts eligible pull request event before secret use", () => {
   const result = evaluateAuditRequest({
